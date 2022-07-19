@@ -35,7 +35,7 @@ dataPodpisaniaUmowyZ_producentem DATE not null);
 -- Do każdej kolumny ustaw odpowiedni „constraint”
 CREATE TABLE Produkty (
 id_produktu int unique, -- musi być unique albo primary key
-id_producenta int not null, -- musi być unique
+id_producenta int not null, -- musi być unique albo primary key (nie jest unique ani primary key, a działa)
 nazwa_produktu varchar(30) default null,
 opis_produktu set ("damska", 'męska', 'dziecięca', 'unisex'),
 cena_netto_zakupu decimal(10,2) check(cena_netto_zakupu >=0),
@@ -51,9 +51,9 @@ procent_VAT_sprzedaży decimal(10,2) DEFAULT NULL);
 --    Data zamówienia
 -- Do każdej kolumny ustaw odpowiedni „constraint”
 CREATE TABLE Zamówienia (
-id_zamówienia int unique, -- musi być unique albo primary key
+id_zamówienia int unique,
 id_klienta int unique, -- musi być unique albo primary key
-id_produktu int not null, -- nie może być UNIQUE albo primary key
+id_produktu int not null, -- nie może być UNIQUE albo primary key -- musi być unique albo primary key
 Data_zamówienia date not null);
 
 -- 5. Utwórz tabelę „Klienci” z kolumnami:
@@ -217,14 +217,60 @@ where b.id_producenta = 1;
 select a.nazwa_produktu Tanie, a.cena_brutto_zakupu
 from Produkty a 
 inner join Producenci b on a.id_producenta = b.id_producenta
-where b.id_producenta = 1 and a.cena_brutto_zakupu < 33.40;
+where b.id_producenta = 1 and a.cena_brutto_zakupu < 
+(select round(avg(c.cena_brutto_zakupu), 2) from Produkty c
+inner join Producenci d on c.id_producenta = d.id_producenta
+where d.id_producenta = 1);
 --       Pozostałe to grupa: „Drogie”
 select a.nazwa_produktu Drogie, a.cena_brutto_zakupu
 from Produkty a 
 inner join Producenci b on a.id_producenta = b.id_producenta
-where b.id_producenta = 1 and a.cena_brutto_zakupu >= 33.40;
--- pozypatnie case podzielić, nazwac kolumnę typ produktów, case drogie, tanie ...
+where b.id_producenta = 1 and a.cena_brutto_zakupu >= 
+(select round(avg(c.cena_brutto_zakupu), 2) from Produkty c
+inner join Producenci d on c.id_producenta = d.id_producenta
+where d.id_producenta = 1);
+
+-- podzypatnie case podzielić, nazwac kolumnę typ produktów, case drogie, tanie ...
+select a.nazwa_produktu, a.cena_brutto_zakupu,
+   case when cena_brutto_zakupu < (
+   select round(avg(c.cena_brutto_zakupu), 2) 
+   from Produkty c
+   inner join Producenci d on c.id_producenta = d.id_producenta
+   where d.id_producenta = 1) then 'Tanie'
+   else 'Drogie'
+   end as typ_produktu
+from Produkty a
+inner join Producenci b on a.id_producenta = b.id_producenta
+where a.id_producenta = 1
+order by a.cena_brutto_zakupu;
+
 -- UNION
+(select a.nazwa_produktu, a.cena_brutto_zakupu,
+   case when cena_brutto_zakupu < (
+      select round(avg(c.cena_brutto_zakupu), 2) 
+      from Produkty c
+      inner join Producenci d on c.id_producenta = d.id_producenta
+      where d.id_producenta = 1) then 'Tanie'
+   end as typ_produktu
+from Produkty a 
+inner join Producenci b on a.id_producenta = b.id_producenta
+where b.id_producenta = 1 and a.cena_brutto_zakupu < 
+(select round(avg(c.cena_brutto_zakupu), 2) from Produkty c
+inner join Producenci d on c.id_producenta = d.id_producenta
+where d.id_producenta = 1))
+UNION
+(select a.nazwa_produktu, a.cena_brutto_zakupu,
+   case when cena_brutto_zakupu >= 
+      (select round(avg(c.cena_brutto_zakupu), 2) from Produkty c
+      inner join Producenci d on c.id_producenta = d.id_producenta
+      where d.id_producenta = 1) then 'Drogie'
+   end as typ_produktu
+from Produkty a 
+inner join Producenci b on a.id_producenta = b.id_producenta
+where b.id_producenta = 1 and a.cena_brutto_zakupu >= 
+(select round(avg(c.cena_brutto_zakupu), 2) from Produkty c
+inner join Producenci d on c.id_producenta = d.id_producenta
+where d.id_producenta = 1));
 
 -- 12. Wyświetl produkty zamówione, wyświetlając tylko ich nazwę
 select a.nazwa_produktu
@@ -262,9 +308,19 @@ cena_netto_zakupu is null or
 cena_brutto_zakupu is null or
 cena_netto_sprzedaży is null or
 cena_brutto_sprzedaży is null or
-procent_VAT_sprzedaży is null; -- Czy tutaj nie da się tej wymiany po where uprościć?
+procent_VAT_sprzedaży is null;
 
 -- 17. Wyświetl produkt najczęściej sprzedawany wraz z jego ceną
+select count(a.id_produktu)
+from Produkty a
+join Zamówienia b
+on a.id_produktu = b.id_klienta; 
+
+select count(b.id_produktu)
+from Produkty a
+join Zamówienia b
+on a.id_produktu = b.id_klienta; 
+
 select count(a.id_produktu) as most_often, a.cena_brutto_sprzedaży as cena
 from Produkty a
 join Zamówienia b
@@ -279,10 +335,43 @@ join Zamówienia b
 on a.id_produktu = b.id_klienta;
 
 -- with najczęściej zamawiana, potem z tabeli produktowej znaleźć to ID korzystajac z in lub równa się
+-- podzapytanie with na początku i znalazł id produktu, które było najczęściej zamawiana w tabeli zamówienia i jak to id produktu już mam, to potem wystarczy z naszej tabeli produktowej znaleźć to id korzystając z ina bądź równa się i wtedy ten produkt powinien mieć jedną cenę, wtedy znajdziesz to własnie id produktu
+-- na początku znajduesz sobie id produktu, a potem z tabeli zamówienia. a następnie z tabeli produktowej wyfiltrowujesz po tym id produktu które chcesz znaleźć
+create view london_0
+as select count(a.id_produktu) as zliczanie, a.id_produktu
+from Zamówienia a
+group by a.id_produktu
+order by zliczanie desc;
+
+select * from london_0;
+
+create view london_1
+as select count(a.id_produktu) as zliczanie, a.id_produktu
+from Zamówienia a
+group by a.id_produktu
+order by zliczanie desc
+limit 1;
+
+select nazwa_produktu, cena_brutto_sprzedaży 
+from Produkty
+where id_produktu = (
+   select id_produktu 
+   from london_1);
 
 -- 18. Znajdź dzień w którym najwięcej zostało złożonych zamówień
-select Data_zamówienia 
+-- używajac grup bya, czyli po prostu sumować ile najwięcej zamówień było i pogrupowac po dacie. Posortować, ograniczyć do jedynki, powinieneś zliczyć ile tych zamówień właśnie było
+
+-- używajac grup bya, czyli po prostu sumować ile najwięcej zamówień było i pogrupowac po dacie.
+select count(id_zamówienia), Data_zamówienia as Data
+from Zamówienia
+group by Data_zamówienia;
+
+-- Posortować, ograniczyć do jedynki, powinieneś zliczyć ile tych zamówień właśnie było
+select Data_zamówienia, count(id_zamówienia) liczba_zamówieni
 from Zamówienia
 group by Data_zamówienia
 order by Data_zamówienia desc
 limit 1;
+
+-- spr.
+select * from Zamówienia;
